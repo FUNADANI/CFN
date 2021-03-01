@@ -1,0 +1,291 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: "true"
+      Tags:
+      - Key: Name
+        Value: myVPC-PublicSubnet
+      VpcId: 
+        Ref: myVPC
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1c
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: "true"
+      Tags:
+      - Key: Name
+        Value: myVPC-PublicSubnet2
+      VpcId: 
+        Ref: myVPC
+    
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: myVPC-IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: 
+        Ref: myVPC
+      InternetGatewayId: 
+        Ref: InternetGateway
+
+  RouteTable: 
+    Type: AWS::EC2::RouteTable
+    DependsOn: AttachGateway
+    Properties: 
+      Tags: 
+      - Key: Name
+        Value: myVPC-RouteTable
+      VpcId:
+        Ref: myVPC
+
+  Route01:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+      RouteTableId:
+        Ref: RouteTable
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: 
+        Ref: RouteTable
+      SubnetId: 
+        Ref: PublicSubnet
+#        Ref: PublicSubnet2
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http and ssh to client host
+      GroupName: CodeSG
+      VpcId:
+         Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 3000
+        ToPort: 3000
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: InstanceSecurityGroup
+    Properties:
+      ImageId: ami-0992fc94ca0f1415a
+      InstanceType: t2.micro
+      KeyName: 
+        Ref: KeyName
+      SecurityGroupIds: 
+      - Ref: InstanceSecurityGroup
+      SubnetId:
+        Ref: PublicSubnet
+      Tags:
+      - Key: Name
+        Value: Webserver
+      Tenancy: default
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: "false"
+      Tags:
+      - Key: Name
+        Value: myVPC-PrivateSubnet-1
+      VpcId: 
+        Ref: myVPC
+
+  PrivateSubnet2:    
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1c
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: "false"
+      Tags:
+      - Key: Name
+        Value: myVPC-PrivateSubnet-2
+      VpcId: 
+        Ref: myVPC
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL to DBInstance
+      GroupName: DBSG
+      VpcId:
+         Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: create subnet group
+      DBSubnetGroupName: mydbsubnetgroup
+      SubnetIds:
+        - Ref: PrivateSubnet1
+        - Ref: PrivateSubnet2
+
+# DBParameterGroup:
+#   Type: AWS::RDS::DBParameterGroup
+#   Properties: 
+#     Description: Default parameter group for mysql8.0
+#     Family: mysql8.0
+#     Parameters: 
+
+  myDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties: 
+      AllocatedStorage: 20
+      AvailabilityZone: ap-northeast-1a
+      BackupRetentionPeriod: 7
+      DBInstanceClass: db.t2.micro
+      DBName: mydatabase
+#     DBParameterGroupName:
+#       Ref: DBParameterGroup
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+      Engine: mysql
+      EngineVersion: 8.0.20
+      MasterUsername: admin
+      MasterUserPassword: administrator
+      Port: 3306
+      PubliclyAccessible: false
+      StorageType: gp2
+      VPCSecurityGroups:
+        - Ref: DBSecurityGroup
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      IpAddressType: ipv4
+      #LoadBalancerAttributes: 
+      #  - LoadBalancerAttribute
+      Name: CodeALB
+      Scheme: internet-facing
+      SecurityGroups: 
+        - Ref: ALBSecurityGroup
+      Subnets: 
+        - Ref: PublicSubnet 
+        - Ref: PublicSubnet2
+  
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http and ssh to alb
+      GroupName: ALBSG
+      VpcId:
+         Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+
+  ALBListener: 
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn:
+            Ref: ALBTargetGroup
+      LoadBalancerArn: 
+        Ref: ALB
+      Port: 80
+      Protocol: HTTP
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      Matcher: 
+        HttpCode: "200"
+      Name: ALBTargetGroup1
+      Port: 3000
+      Protocol: HTTP
+      Targets: 
+        - Id: !Ref EC2Instance
+          Port: 3000
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId: 
+        Ref: myVPC
+
+  ALBlogsbucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: alblogsbucket
+      LifecycleConfiguration: 
+        Rules:
+          - ExpirationInDays: 365
+            Id: alb-log-lifecyclerule
+            Status: Enabled
+  
+  ALBlogsbucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: 
+        Ref: ALBlogsbucket
+      PolicyDocument: 
+        Statement:
+          - Action: 
+              - "s3:ListBucket"
+            Effect: Allow
+            Resource: "arn:aws:s3:::alblogsbucket"
+            Principal: "*"
