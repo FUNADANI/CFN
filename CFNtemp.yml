@@ -116,6 +116,10 @@ Resources:
         FromPort: 3000
         ToPort: 3000
         CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
       - IpProtocol: -1
         FromPort: -1
@@ -138,6 +142,32 @@ Resources:
       - Key: Name
         Value: Webserver
       Tenancy: default
+
+#  EC2Instance2:
+#    Type: AWS::EC2::Instance
+#    DependsOn: InstanceSecurityGroup
+#    Properties:
+#      ImageId: ami-0992fc94ca0f1415a
+#      InstanceType: t2.micro
+#      KeyName: 
+#        Ref: KeyName
+#      SecurityGroupIds: 
+#      - Ref: InstanceSecurityGroup
+#      SubnetId:
+#        Ref: PublicSubnet
+#      Tags:
+#      - Key: Name
+#        Value: JenkinsServer
+#      Tenancy: default
+#      UserData:
+#        Fn::Base64: |
+#          #!/bin/bash
+#          sudo yum update -y
+#          sudo yum install -y java-1.8.0-openjdk-devel.x86_64
+#          sudo wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+#          sudo rpm --import https://pkg.jenkins.io/redhat/jenkins.io.key
+#          sudo yum -y install jenkins
+#          sudo service jenkins start
 
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
@@ -277,6 +307,8 @@ Resources:
       Targets: 
         - Id: !Ref EC2Instance
           Port: 3000
+#        - Id: !Ref EC2Instance2
+#          Port: 8080
       TargetType: instance
       UnhealthyThresholdCount: 2
       VpcId: 
